@@ -1,5 +1,5 @@
 const User = require("../models/user");
-const { signUpSchema } = require("../lib/validation/users");
+const { signUpSchema, signInSchema } = require("../lib/validation/users");
 const { z } = require("zod");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -9,6 +9,46 @@ const users = [
   { id: 2, name: "Jenny" },
   { id: 3, name: "Jennifer" },
 ];
+
+const signIn = async (req,res) => {
+  try{
+    const { username, password } = signInSchema.parse(req.body);
+
+    const userExists = await User.findOne({ username });
+
+    if (!userExists) {
+      return res.status(400).json({ message: 'Invalid credentials'})
+    }
+
+    const passwordMatch = await bcrypt.compare(password, userExists.password);
+    if(!passwordMatch){
+      return res.status(400).json({ message: 'Invalid credentials' })
+    }
+
+    const token = jwt.sign(
+      {
+        id: userExists._id,
+        username: userExists.username,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1h",
+      }
+    );
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 60 * 60 * 1000,
+    });
+    return res.status(200).json({ message: 'User authenticated'});
+  }
+  catch (error) {
+  console.log(error);
+  if (error instanceof z.ZodError) {
+    return res.status(400).json({ message: error.errors[0].message });
+  }
+  return res.status(500).json({ message: "Internal server error" });
+}
+};
 
 const getUser = async (req, res) => {
   try {
@@ -74,7 +114,14 @@ const signUp = async (req, res) => {
   }
 };
 
+const logOut = (req, res) => {
+  res.clearCookie("token");
+  return res.status(200).json({ message: "Logged out" });
+}
+
 module.exports = {
   getUser,
   signUp,
+  signIn,
+  logOut,
 };
